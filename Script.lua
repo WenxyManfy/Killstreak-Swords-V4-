@@ -42,7 +42,9 @@ local STATE = {
     ignoredRareItems = {},
     isMobile = game:GetService("UserInputService").TouchEnabled,
     isWalking = false,
-    walkAttempts = 0
+    walkAttempts = 0,
+    minimized = false,
+    closed = false
 }
 
 --= Создание интерфейса =--
@@ -61,7 +63,7 @@ mainFrame.Active = true
 mainFrame.Draggable = true
 mainFrame.Parent = gui
 
--- Заголовок
+-- Заголовок с кнопками управления
 local titleBar = Instance.new("Frame")
 titleBar.Size = UDim2.new(1, 0, 0, 20)
 titleBar.Position = UDim2.new(0, 0, 0, 0)
@@ -70,21 +72,57 @@ titleBar.BorderSizePixel = 0
 titleBar.Parent = mainFrame
 
 local titleText = Instance.new("TextLabel")
-titleText.Size = UDim2.new(1, 0, 1, 0)
-titleText.Text = "Auto Farm GUI (перетаскивайте)"
+titleText.Size = UDim2.new(0.7, 0, 1, 0)
+titleText.Position = UDim2.new(0, 5, 0, 0)
+titleText.Text = "Auto Farm GUI"
 titleText.TextColor3 = Color3.fromRGB(255, 255, 255)
 titleText.BackgroundTransparency = 1
 titleText.Font = Enum.Font.SourceSansSemibold
 titleText.TextSize = 14
+titleText.TextXAlignment = Enum.TextXAlignment.Left
 titleText.Parent = titleBar
+
+-- Кнопка сворачивания
+local minimizeBtn = Instance.new("TextButton")
+minimizeBtn.Name = "MinimizeBtn"
+minimizeBtn.Size = UDim2.new(0, 20, 0, 20)
+minimizeBtn.Position = UDim2.new(1, -40, 0, 0)
+minimizeBtn.Text = "_"
+minimizeBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+minimizeBtn.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+minimizeBtn.BorderSizePixel = 0
+minimizeBtn.Font = Enum.Font.SourceSansBold
+minimizeBtn.TextSize = 14
+minimizeBtn.Parent = titleBar
+
+-- Кнопка закрытия
+local closeBtn = Instance.new("TextButton")
+closeBtn.Name = "CloseBtn"
+closeBtn.Size = UDim2.new(0, 20, 0, 20)
+closeBtn.Position = UDim2.new(1, -20, 0, 0)
+closeBtn.Text = "X"
+closeBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+closeBtn.BackgroundColor3 = Color3.fromRGB(180, 60, 60)
+closeBtn.BorderSizePixel = 0
+closeBtn.Font = Enum.Font.SourceSansBold
+closeBtn.TextSize = 14
+closeBtn.Parent = titleBar
+
+-- Основной контент (будет скрываться при сворачивании)
+local contentFrame = Instance.new("Frame")
+contentFrame.Name = "ContentFrame"
+contentFrame.Size = UDim2.new(1, 0, 1, -20)
+contentFrame.Position = UDim2.new(0, 0, 0, 20)
+contentFrame.BackgroundTransparency = 1
+contentFrame.Parent = mainFrame
 
 -- Фрейм для редких предметов
 local rareItemsFrame = Instance.new("Frame")
 rareItemsFrame.Size = UDim2.new(1, -10, 0, 80)
-rareItemsFrame.Position = UDim2.new(0, 5, 0, 25)
+rareItemsFrame.Position = UDim2.new(0, 5, 0, 5)
 rareItemsFrame.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
 rareItemsFrame.BorderSizePixel = 0
-rareItemsFrame.Parent = mainFrame
+rareItemsFrame.Parent = contentFrame
 
 local rareItemsTitle = Instance.new("TextLabel")
 rareItemsTitle.Size = UDim2.new(1, 0, 0, 20)
@@ -116,7 +154,7 @@ if STATE.isMobile then
     resetBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
     resetBtn.BackgroundColor3 = Color3.fromRGB(200, 100, 100)
     resetBtn.Visible = false
-    resetBtn.Parent = mainFrame
+    resetBtn.Parent = contentFrame
 end
 
 local function createControlButton(name, yPos, color)
@@ -129,7 +167,7 @@ local function createControlButton(name, yPos, color)
     btn.TextSize = 16
     btn.TextColor3 = Color3.fromRGB(255, 255, 255)
     btn.BackgroundColor3 = color
-    btn.Parent = mainFrame
+    btn.Parent = contentFrame
     return btn
 end
 
@@ -141,7 +179,7 @@ statusDisplay.TextColor3 = Color3.fromRGB(255, 255, 255)
 statusDisplay.BackgroundTransparency = 1
 statusDisplay.Font = Enum.Font.SourceSansSemibold
 statusDisplay.TextSize = 18
-statusDisplay.Parent = mainFrame
+statusDisplay.Parent = contentFrame
 
 local startBtn = createControlButton("Старт", STATE.isMobile and 0.85 or 0.75, CONFIG.buttonColors.start)
 local pauseBtn = createControlButton("Пауза", STATE.isMobile and 0.95 or 0.85, CONFIG.buttonColors.inactive)
@@ -172,6 +210,28 @@ end
 for i, itemName in ipairs(CONFIG.rareItems) do
     createRareItemButton(itemName, i)
 end
+
+-- Функции для управления окном
+local function toggleMinimize()
+    STATE.minimized = not STATE.minimized
+    if STATE.minimized then
+        contentFrame.Visible = false
+        mainFrame.Size = UDim2.new(0, 280, 0, 20)
+        minimizeBtn.Text = "+"
+    else
+        contentFrame.Visible = true
+        mainFrame.Size = UDim2.new(0, 280, 0, STATE.isMobile and 330 or 300)
+        minimizeBtn.Text = "_"
+    end
+end
+
+local function closeGUI()
+    STATE.closed = true
+    gui:Destroy()
+end
+
+minimizeBtn.MouseButton1Click:Connect(toggleMinimize)
+closeBtn.MouseButton1Click:Connect(closeGUI)
 
 --= Основные функции =--
 local function updateUI()
@@ -434,7 +494,7 @@ end
 
 --= Обработчики событий =--
 startBtn.MouseButton1Click:Connect(function()
-    if not STATE.running then
+    if not STATE.running and not STATE.closed then
         STATE.running = true
         STATE.paused = false
         STATE.stopped = false
@@ -446,14 +506,14 @@ startBtn.MouseButton1Click:Connect(function()
 end)
 
 pauseBtn.MouseButton1Click:Connect(function()
-    if STATE.running and not STATE.rareItemFound then
+    if STATE.running and not STATE.rareItemFound and not STATE.closed then
         STATE.paused = not STATE.paused
         updateUI()
     end
 end)
 
 stopBtn.MouseButton1Click:Connect(function()
-    if (STATE.running or STATE.paused) and not STATE.rareItemFound then
+    if (STATE.running or STATE.paused) and not STATE.rareItemFound and not STATE.closed then
         STATE.stopped = true
         STATE.running = false
         STATE.paused = false
@@ -466,7 +526,7 @@ end)
 -- Кнопка сброса для мобильных устройств
 if STATE.isMobile and resetBtn then
     resetBtn.MouseButton1Click:Connect(function()
-        if STATE.running and not STATE.paused and not STATE.stopped then
+        if STATE.running and not STATE.paused and not STATE.stopped and not STATE.closed then
             executeResetSequence()
         end
     end)
