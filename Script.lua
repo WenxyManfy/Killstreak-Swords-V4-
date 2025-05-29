@@ -28,7 +28,13 @@ local CONFIG = {
         "Luminous Stellar",
         "Existential Conqueror",
         "TON-618"
-    }
+    },
+    windowWidth = 380,
+    windowHeightNormal = 320,
+    windowHeightMobile = 350,
+    buttonWidth = 0.9,
+    titleHeight = 25,
+    ignoreItem = "Luminance"
 }
 
 --= Состояния скрипта =--
@@ -44,28 +50,45 @@ local STATE = {
     isWalking = false,
     walkAttempts = 0,
     minimized = false,
-    closed = false
+    closed = false,
+    unexpectedRareItem = nil
 }
 
 --= Создание интерфейса =--
 local player = game:GetService("Players").LocalPlayer
+
+-- Удаляем старые версии GUI
+if player:FindFirstChild("PlayerGui") then
+    for _, oldGui in ipairs(player.PlayerGui:GetChildren()) do
+        if oldGui:IsA("ScreenGui") and oldGui.Name:find("AutoFarmGUI") then
+            oldGui:Destroy()
+        end
+    end
+end
+
 local gui = Instance.new("ScreenGui")
 gui.Name = "AutoFarmGUI_"..tostring(math.random(10000,99999))
 gui.ResetOnSpawn = false
 gui.Parent = player:WaitForChild("PlayerGui")
 
+local function centerFrame()
+    local viewportSize = workspace.CurrentCamera.ViewportSize
+    return UDim2.new(0.5, -CONFIG.windowWidth/2, 0.5, -(STATE.isMobile and CONFIG.windowHeightMobile or CONFIG.windowHeightNormal)/2)
+end
+
 local mainFrame = Instance.new("Frame")
-mainFrame.Size = UDim2.new(0, 280, 0, STATE.isMobile and 330 or 300)
-mainFrame.Position = UDim2.new(0.05, 0, 0.5, 0)
+mainFrame.Size = UDim2.new(0, CONFIG.windowWidth, 0, STATE.isMobile and CONFIG.windowHeightMobile or CONFIG.windowHeightNormal)
+mainFrame.Position = centerFrame()
 mainFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
 mainFrame.BorderSizePixel = 0
 mainFrame.Active = true
 mainFrame.Draggable = true
+mainFrame.Visible = true
 mainFrame.Parent = gui
 
 -- Заголовок с кнопками управления
 local titleBar = Instance.new("Frame")
-titleBar.Size = UDim2.new(1, 0, 0, 20)
+titleBar.Size = UDim2.new(1, 0, 0, CONFIG.titleHeight)
 titleBar.Position = UDim2.new(0, 0, 0, 0)
 titleBar.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
 titleBar.BorderSizePixel = 0
@@ -74,7 +97,7 @@ titleBar.Parent = mainFrame
 local titleText = Instance.new("TextLabel")
 titleText.Size = UDim2.new(0.7, 0, 1, 0)
 titleText.Position = UDim2.new(0, 5, 0, 0)
-titleText.Text = "Auto Farm GUI"
+titleText.Text = "Auto Farm GUI (Чит)"
 titleText.TextColor3 = Color3.fromRGB(255, 255, 255)
 titleText.BackgroundTransparency = 1
 titleText.Font = Enum.Font.SourceSansSemibold
@@ -85,8 +108,8 @@ titleText.Parent = titleBar
 -- Кнопка сворачивания
 local minimizeBtn = Instance.new("TextButton")
 minimizeBtn.Name = "MinimizeBtn"
-minimizeBtn.Size = UDim2.new(0, 20, 0, 20)
-minimizeBtn.Position = UDim2.new(1, -40, 0, 0)
+minimizeBtn.Size = UDim2.new(0, CONFIG.titleHeight, 0, CONFIG.titleHeight)
+minimizeBtn.Position = UDim2.new(1, -CONFIG.titleHeight*2, 0, 0)
 minimizeBtn.Text = "_"
 minimizeBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
 minimizeBtn.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
@@ -98,8 +121,8 @@ minimizeBtn.Parent = titleBar
 -- Кнопка закрытия
 local closeBtn = Instance.new("TextButton")
 closeBtn.Name = "CloseBtn"
-closeBtn.Size = UDim2.new(0, 20, 0, 20)
-closeBtn.Position = UDim2.new(1, -20, 0, 0)
+closeBtn.Size = UDim2.new(0, CONFIG.titleHeight, 0, CONFIG.titleHeight)
+closeBtn.Position = UDim2.new(1, -CONFIG.titleHeight, 0, 0)
 closeBtn.Text = "X"
 closeBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
 closeBtn.BackgroundColor3 = Color3.fromRGB(180, 60, 60)
@@ -108,18 +131,19 @@ closeBtn.Font = Enum.Font.SourceSansBold
 closeBtn.TextSize = 14
 closeBtn.Parent = titleBar
 
--- Основной контент (будет скрываться при сворачивании)
+-- Основной контент
 local contentFrame = Instance.new("Frame")
 contentFrame.Name = "ContentFrame"
-contentFrame.Size = UDim2.new(1, 0, 1, -20)
-contentFrame.Position = UDim2.new(0, 0, 0, 20)
+contentFrame.Size = UDim2.new(1, 0, 1, -CONFIG.titleHeight)
+contentFrame.Position = UDim2.new(0, 0, 0, CONFIG.titleHeight)
 contentFrame.BackgroundTransparency = 1
+contentFrame.Visible = true
 contentFrame.Parent = mainFrame
 
 -- Фрейм для редких предметов
 local rareItemsFrame = Instance.new("Frame")
-rareItemsFrame.Size = UDim2.new(1, -10, 0, 80)
-rareItemsFrame.Position = UDim2.new(0, 5, 0, 5)
+rareItemsFrame.Size = UDim2.new(CONFIG.buttonWidth, 0, 0, 100)
+rareItemsFrame.Position = UDim2.new((1 - CONFIG.buttonWidth)/2, 0, 0, 10)
 rareItemsFrame.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
 rareItemsFrame.BorderSizePixel = 0
 rareItemsFrame.Parent = contentFrame
@@ -146,8 +170,8 @@ local resetBtn
 if STATE.isMobile then
     resetBtn = Instance.new("TextButton")
     resetBtn.Name = "MobileReset"
-    resetBtn.Size = UDim2.new(0.85, 0, 0, 30)
-    resetBtn.Position = UDim2.new(0.075, 0, 0.65, 0)
+    resetBtn.Size = UDim2.new(CONFIG.buttonWidth, 0, 0, 30)
+    resetBtn.Position = UDim2.new((1 - CONFIG.buttonWidth)/2, 0, 0.65, 0)
     resetBtn.Text = "СБРОС (для моб.)"
     resetBtn.Font = Enum.Font.SourceSansBold
     resetBtn.TextSize = 14
@@ -160,8 +184,8 @@ end
 local function createControlButton(name, yPos, color)
     local btn = Instance.new("TextButton")
     btn.Name = name
-    btn.Size = UDim2.new(0.85, 0, 0, 40)
-    btn.Position = UDim2.new(0.075, 0, yPos, 0)
+    btn.Size = UDim2.new(CONFIG.buttonWidth, 0, 0, 40)
+    btn.Position = UDim2.new((1 - CONFIG.buttonWidth)/2, 0, yPos, 0)
     btn.Text = name:upper()
     btn.Font = Enum.Font.SourceSansBold
     btn.TextSize = 16
@@ -172,13 +196,14 @@ local function createControlButton(name, yPos, color)
 end
 
 local statusDisplay = Instance.new("TextLabel")
-statusDisplay.Size = UDim2.new(1, 0, 0, 50)
-statusDisplay.Position = UDim2.new(0, 0, STATE.isMobile and 0.55 or 0.45, 0)
+statusDisplay.Size = UDim2.new(CONFIG.buttonWidth, 0, 0, 60)
+statusDisplay.Position = UDim2.new((1 - CONFIG.buttonWidth)/2, 0, STATE.isMobile and 0.55 or 0.45, 0)
 statusDisplay.Text = "СКРИПТ ОСТАНОВЛЕН"
 statusDisplay.TextColor3 = Color3.fromRGB(255, 255, 255)
 statusDisplay.BackgroundTransparency = 1
 statusDisplay.Font = Enum.Font.SourceSansSemibold
 statusDisplay.TextSize = 18
+statusDisplay.TextWrapped = true
 statusDisplay.Parent = contentFrame
 
 local startBtn = createControlButton("Старт", STATE.isMobile and 0.85 or 0.75, CONFIG.buttonColors.start)
@@ -216,13 +241,14 @@ local function toggleMinimize()
     STATE.minimized = not STATE.minimized
     if STATE.minimized then
         contentFrame.Visible = false
-        mainFrame.Size = UDim2.new(0, 280, 0, 20)
+        mainFrame.Size = UDim2.new(0, CONFIG.windowWidth, 0, CONFIG.titleHeight)
         minimizeBtn.Text = "+"
     else
         contentFrame.Visible = true
-        mainFrame.Size = UDim2.new(0, 280, 0, STATE.isMobile and 330 or 300)
+        mainFrame.Size = UDim2.new(0, CONFIG.windowWidth, 0, STATE.isMobile and CONFIG.windowHeightMobile or CONFIG.windowHeightNormal)
         minimizeBtn.Text = "_"
     end
+    mainFrame.Position = centerFrame()
 end
 
 local function closeGUI()
@@ -241,7 +267,9 @@ local function updateUI()
     
     pauseBtn.Text = STATE.paused and "ПРОДОЛЖИТЬ" or "ПАУЗА"
     
-    if STATE.rareItemFound then
+    if STATE.unexpectedRareItem then
+        statusDisplay.Text = string.format("НАЙДЕН НЕИЗВЕСТНЫЙ ЦЕННЫЙ ПРЕДМЕТ: %s!\nСКРИПТ ОСТАНОВЛЕН", STATE.unexpectedRareItem)
+    elseif STATE.rareItemFound then
         statusDisplay.Text = "НАЙДЕН РЕДКИЙ ПРЕДМЕТ! СКРИПТ ОСТАНОВЛЕН"
     elseif STATE.stopped then
         statusDisplay.Text = string.format("ОСТАНОВЛЕНО | Попыток: %d", STATE.attemptCount)
@@ -261,6 +289,25 @@ local function updateUI()
 end
 
 local function checkForRareItems()
+    -- Проверяем неизвестные ценные предметы
+    for _, item in ipairs(player.Backpack:GetChildren()) do
+        if item:IsA("Tool") and item.Name ~= CONFIG.ignoreItem then
+            local isKnown = false
+            for _, knownItem in ipairs(CONFIG.rareItems) do
+                if item.Name == knownItem then
+                    isKnown = true
+                    break
+                end
+            end
+            
+            if not isKnown and not STATE.ignoredRareItems[item.Name] then
+                STATE.unexpectedRareItem = item.Name
+                return true
+            end
+        end
+    end
+    
+    -- Проверяем известные редкие предметы
     for _, itemName in ipairs(CONFIG.rareItems) do
         if not STATE.ignoredRareItems[itemName] then
             for _, item in ipairs(player.Backpack:GetChildren()) do
@@ -291,14 +338,14 @@ local function holdEKey()
             task.wait(0.1)
         end
         
-        if STATE.stopped or STATE.isDead or STATE.rareItemFound then break end
+        if STATE.stopped or STATE.isDead or STATE.rareItemFound or STATE.unexpectedRareItem then break end
         
         timer -= 0.1
         task.wait(0.1)
     end
     
     virtualInput:SendKeyEvent(false, "E", false, nil)
-    return not STATE.stopped and not STATE.rareItemFound
+    return not STATE.stopped and not STATE.rareItemFound and not STATE.unexpectedRareItem
 end
 
 local function walkToTarget()
@@ -324,31 +371,28 @@ local function walkToTarget()
         
         humanoid:MoveTo(CONFIG.targetPosition)
         
-        -- Ждем пока персонаж дойдет или истечет время
         while (rootPart.Position - CONFIG.targetPosition).Magnitude > CONFIG.arrivalThreshold 
               and (os.time() - startTime) < CONFIG.maxWalkTime 
               and not STATE.stopped 
               and not STATE.paused do
             
-            if STATE.isDead or STATE.rareItemFound then
+            if STATE.isDead or STATE.rareItemFound or STATE.unexpectedRareItem then
                 STATE.isWalking = false
                 return false
             end
             task.wait(0.1)
         end
         
-        -- Проверяем достиг ли персонаж цели
         if (rootPart.Position - CONFIG.targetPosition).Magnitude <= CONFIG.arrivalThreshold then
             success = true
         else
-            -- Персонаж не дошел за отведенное время - пробуем снова
             statusDisplay.Text = string.format("Попытка %d | Повтор движения...", STATE.attemptCount)
             task.wait(0.5)
         end
     end
     
     STATE.isWalking = false
-    return success and not STATE.stopped and not STATE.rareItemFound
+    return success and not STATE.stopped and not STATE.rareItemFound and not STATE.unexpectedRareItem
 end
 
 local function executeResetSequence()
@@ -361,13 +405,11 @@ local function executeResetSequence()
     end
     
     if STATE.isMobile then
-        -- Альтернативный метод сброса для мобильных устройств
         local humanoid = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
         if humanoid then
             humanoid.Health = 0
         end
     else
-        -- Стандартный метод сброса для ПК
         local virtualInput = game:GetService("VirtualInputManager")
         virtualInput:SendKeyEvent(true, "Escape", false, nil)
         task.wait(0.05)
@@ -424,22 +466,23 @@ if player.Character then
 end
 
 local function waitForRespawn()
-    while STATE.isDead and not STATE.stopped and not STATE.rareItemFound do
+    while STATE.isDead and not STATE.stopped and not STATE.rareItemFound and not STATE.unexpectedRareItem do
         if player.Character and player.Character:FindFirstChild("Humanoid") and player.Character.Humanoid.Health > 0 then
             STATE.isDead = false
             return true
         end
         task.wait(CONFIG.respawnCheckInterval)
     end
-    return not STATE.stopped and not STATE.rareItemFound
+    return not STATE.stopped and not STATE.rareItemFound and not STATE.unexpectedRareItem
 end
 
 --= Главный цикл =--
 local function executeScript()
     STATE.attemptCount = 0
     STATE.rareItemFound = false
+    STATE.unexpectedRareItem = nil
     
-    while not STATE.stopped and not STATE.rareItemFound do
+    while not STATE.stopped and not STATE.rareItemFound and not STATE.unexpectedRareItem do
         if checkForRareItems() then
             STATE.rareItemFound = true
             break
@@ -449,7 +492,6 @@ local function executeScript()
             if not waitForRespawn() then break end
         end
         
-        -- Идем к цели вместо телепортации
         if not walkToTarget() then break end
         
         statusDisplay.Text = string.format("Попытка %d | Зажатие E", STATE.attemptCount)
@@ -474,12 +516,12 @@ local function executeScript()
         end
         
         local cooldown = 1
-        while cooldown > 0 and not STATE.stopped and not STATE.isDead and not STATE.rareItemFound do
-            while STATE.paused and not STATE.stopped and not STATE.rareItemFound do
+        while cooldown > 0 and not STATE.stopped and not STATE.isDead and not STATE.rareItemFound and not STATE.unexpectedRareItem do
+            while STATE.paused and not STATE.stopped and not STATE.rareItemFound and not STATE.unexpectedRareItem do
                 task.wait(0.1)
             end
             
-            if STATE.stopped or STATE.rareItemFound then break end
+            if STATE.stopped or STATE.rareItemFound or STATE.unexpectedRareItem then break end
             cooldown -= 0.1
             task.wait(0.1)
         end
@@ -500,20 +542,21 @@ startBtn.MouseButton1Click:Connect(function()
         STATE.stopped = false
         STATE.isDead = false
         STATE.rareItemFound = false
+        STATE.unexpectedRareItem = nil
         updateUI()
         coroutine.wrap(executeScript)()
     end
 end)
 
 pauseBtn.MouseButton1Click:Connect(function()
-    if STATE.running and not STATE.rareItemFound and not STATE.closed then
+    if STATE.running and not STATE.rareItemFound and not STATE.unexpectedRareItem and not STATE.closed then
         STATE.paused = not STATE.paused
         updateUI()
     end
 end)
 
 stopBtn.MouseButton1Click:Connect(function()
-    if (STATE.running or STATE.paused) and not STATE.rareItemFound and not STATE.closed then
+    if (STATE.running or STATE.paused) and not STATE.rareItemFound and not STATE.unexpectedRareItem and not STATE.closed then
         STATE.stopped = true
         STATE.running = false
         STATE.paused = false
@@ -523,7 +566,6 @@ stopBtn.MouseButton1Click:Connect(function()
     end
 end)
 
--- Кнопка сброса для мобильных устройств
 if STATE.isMobile and resetBtn then
     resetBtn.MouseButton1Click:Connect(function()
         if STATE.running and not STATE.paused and not STATE.stopped and not STATE.closed then
@@ -532,5 +574,28 @@ if STATE.isMobile and resetBtn then
     end)
 end
 
+-- Функция восстановления GUI
+local function ensureGuiVisible()
+    if not gui or not gui.Parent then
+        gui = Instance.new("ScreenGui")
+        gui.Name = "AutoFarmGUI_"..tostring(math.random(10000,99999))
+        gui.ResetOnSpawn = false
+        gui.Parent = player:WaitForChild("PlayerGui")
+        mainFrame.Parent = gui
+    end
+    mainFrame.Visible = true
+end
+
 -- Первоначальная настройка UI
 updateUI()
+
+-- Дополнительная проверка через 2 секунды
+delay(2, function()
+    if not mainFrame or not mainFrame.Visible then
+        ensureGuiVisible()
+        warn("Авто-исправление: GUI был невидим, восстановлен")
+    end
+end)
+
+-- Убедимся, что GUI виден сразу
+ensureGuiVisible()
