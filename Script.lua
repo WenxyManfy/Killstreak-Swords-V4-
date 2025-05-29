@@ -30,8 +30,8 @@ local CONFIG = {
         "TON-618"
     },
     windowWidth = 380,
-    windowHeightNormal = 320,
-    windowHeightMobile = 350,
+    windowHeightNormal = 340, -- Увеличена высота
+    windowHeightMobile = 370, -- Увеличена высота
     buttonWidth = 0.9,
     titleHeight = 25,
     ignoreItem = "Luminance"
@@ -43,6 +43,7 @@ local STATE = {
     paused = false,
     stopped = true,
     attemptCount = 0,
+    totalAttempts = 0, -- Добавлен общий счетчик попыток
     isDead = false,
     rareItemFound = false,
     ignoredRareItems = {},
@@ -206,6 +207,16 @@ statusDisplay.TextSize = 18
 statusDisplay.TextWrapped = true
 statusDisplay.Parent = contentFrame
 
+local attemptsDisplay = Instance.new("TextLabel") -- Добавлен дисплей общего счетчика
+attemptsDisplay.Size = UDim2.new(CONFIG.buttonWidth, 0, 0, 20)
+attemptsDisplay.Position = UDim2.new((1 - CONFIG.buttonWidth)/2, 0, STATE.isMobile and 0.75 or 0.65, 0)
+attemptsDisplay.Text = "Всего попыток: 0"
+attemptsDisplay.TextColor3 = Color3.fromRGB(200, 200, 200)
+attemptsDisplay.BackgroundTransparency = 1
+attemptsDisplay.Font = Enum.Font.SourceSans
+attemptsDisplay.TextSize = 14
+attemptsDisplay.Parent = contentFrame
+
 local startBtn = createControlButton("Старт", STATE.isMobile and 0.85 or 0.75, CONFIG.buttonColors.start)
 local pauseBtn = createControlButton("Пауза", STATE.isMobile and 0.95 or 0.85, CONFIG.buttonColors.inactive)
 local stopBtn = createControlButton("Стоп", STATE.isMobile and 1.05 or 0.95, CONFIG.buttonColors.inactive)
@@ -253,6 +264,9 @@ end
 
 local function closeGUI()
     STATE.closed = true
+    STATE.running = false
+    STATE.paused = false
+    STATE.stopped = true
     gui:Destroy()
 end
 
@@ -266,6 +280,7 @@ local function updateUI()
     stopBtn.BackgroundColor3 = STATE.running and CONFIG.buttonColors.stop or CONFIG.buttonColors.inactive
     
     pauseBtn.Text = STATE.paused and "ПРОДОЛЖИТЬ" or "ПАУЗА"
+    attemptsDisplay.Text = "Всего попыток: "..tostring(STATE.totalAttempts) -- Обновляем общий счетчик
     
     if STATE.unexpectedRareItem then
         statusDisplay.Text = string.format("НАЙДЕН НЕИЗВЕСТНЫЙ ЦЕННЫЙ ПРЕДМЕТ: %s!\nСКРИПТ ОСТАНОВЛЕН", STATE.unexpectedRareItem)
@@ -333,19 +348,19 @@ local function holdEKey()
     virtualInput:SendKeyEvent(true, "E", false, nil)
     
     local timer = CONFIG.holdEKeyTime
-    while timer > 0 and not STATE.stopped do
-        while STATE.paused and not STATE.stopped do
+    while timer > 0 and not STATE.stopped and not STATE.closed do
+        while STATE.paused and not STATE.stopped and not STATE.closed do
             task.wait(0.1)
         end
         
-        if STATE.stopped or STATE.isDead or STATE.rareItemFound or STATE.unexpectedRareItem then break end
+        if STATE.stopped or STATE.isDead or STATE.rareItemFound or STATE.unexpectedRareItem or STATE.closed then break end
         
         timer -= 0.1
         task.wait(0.1)
     end
     
     virtualInput:SendKeyEvent(false, "E", false, nil)
-    return not STATE.stopped and not STATE.rareItemFound and not STATE.unexpectedRareItem
+    return not STATE.stopped and not STATE.rareItemFound and not STATE.unexpectedRareItem and not STATE.closed
 end
 
 local function walkToTarget()
@@ -365,7 +380,7 @@ local function walkToTarget()
     local success = false
     local startTime = os.time()
     
-    while not success and STATE.walkAttempts < 3 and not STATE.stopped and not STATE.paused do
+    while not success and STATE.walkAttempts < 3 and not STATE.stopped and not STATE.paused and not STATE.closed do
         STATE.walkAttempts += 1
         startTime = os.time()
         
@@ -374,9 +389,10 @@ local function walkToTarget()
         while (rootPart.Position - CONFIG.targetPosition).Magnitude > CONFIG.arrivalThreshold 
               and (os.time() - startTime) < CONFIG.maxWalkTime 
               and not STATE.stopped 
-              and not STATE.paused do
+              and not STATE.paused 
+              and not STATE.closed do
             
-            if STATE.isDead or STATE.rareItemFound or STATE.unexpectedRareItem then
+            if STATE.isDead or STATE.rareItemFound or STATE.unexpectedRareItem or STATE.closed then
                 STATE.isWalking = false
                 return false
             end
@@ -392,7 +408,7 @@ local function walkToTarget()
     end
     
     STATE.isWalking = false
-    return success and not STATE.stopped and not STATE.rareItemFound and not STATE.unexpectedRareItem
+    return success and not STATE.stopped and not STATE.rareItemFound and not STATE.unexpectedRareItem and not STATE.closed
 end
 
 local function executeResetSequence()
@@ -456,6 +472,7 @@ local function onCharacterAdded(character)
     character:WaitForChild("Humanoid").Died:Connect(function()
         STATE.isDead = true
         STATE.attemptCount += 1
+        STATE.totalAttempts += 1 -- Увеличиваем общий счетчик
         updateUI()
     end)
 end
@@ -466,14 +483,14 @@ if player.Character then
 end
 
 local function waitForRespawn()
-    while STATE.isDead and not STATE.stopped and not STATE.rareItemFound and not STATE.unexpectedRareItem do
+    while STATE.isDead and not STATE.stopped and not STATE.rareItemFound and not STATE.unexpectedRareItem and not STATE.closed do
         if player.Character and player.Character:FindFirstChild("Humanoid") and player.Character.Humanoid.Health > 0 then
             STATE.isDead = false
             return true
         end
         task.wait(CONFIG.respawnCheckInterval)
     end
-    return not STATE.stopped and not STATE.rareItemFound and not STATE.unexpectedRareItem
+    return not STATE.stopped and not STATE.rareItemFound and not STATE.unexpectedRareItem and not STATE.closed
 end
 
 --= Главный цикл =--
@@ -482,7 +499,7 @@ local function executeScript()
     STATE.rareItemFound = false
     STATE.unexpectedRareItem = nil
     
-    while not STATE.stopped and not STATE.rareItemFound and not STATE.unexpectedRareItem do
+    while not STATE.stopped and not STATE.rareItemFound and not STATE.unexpectedRareItem and not STATE.closed do
         if checkForRareItems() then
             STATE.rareItemFound = true
             break
@@ -516,12 +533,12 @@ local function executeScript()
         end
         
         local cooldown = 1
-        while cooldown > 0 and not STATE.stopped and not STATE.isDead and not STATE.rareItemFound and not STATE.unexpectedRareItem do
-            while STATE.paused and not STATE.stopped and not STATE.rareItemFound and not STATE.unexpectedRareItem do
+        while cooldown > 0 and not STATE.stopped and not STATE.isDead and not STATE.rareItemFound and not STATE.unexpectedRareItem and not STATE.closed do
+            while STATE.paused and not STATE.stopped and not STATE.rareItemFound and not STATE.unexpectedRareItem and not STATE.closed do
                 task.wait(0.1)
             end
             
-            if STATE.stopped or STATE.rareItemFound or STATE.unexpectedRareItem then break end
+            if STATE.stopped or STATE.rareItemFound or STATE.unexpectedRareItem or STATE.closed then break end
             cooldown -= 0.1
             task.wait(0.1)
         end
@@ -574,28 +591,5 @@ if STATE.isMobile and resetBtn then
     end)
 end
 
--- Функция восстановления GUI
-local function ensureGuiVisible()
-    if not gui or not gui.Parent then
-        gui = Instance.new("ScreenGui")
-        gui.Name = "AutoFarmGUI_"..tostring(math.random(10000,99999))
-        gui.ResetOnSpawn = false
-        gui.Parent = player:WaitForChild("PlayerGui")
-        mainFrame.Parent = gui
-    end
-    mainFrame.Visible = true
-end
-
 -- Первоначальная настройка UI
 updateUI()
-
--- Дополнительная проверка через 2 секунды
-delay(2, function()
-    if not mainFrame or not mainFrame.Visible then
-        ensureGuiVisible()
-        warn("Авто-исправление: GUI был невидим, восстановлен")
-    end
-end)
-
--- Убедимся, что GUI виден сразу
-ensureGuiVisible()
