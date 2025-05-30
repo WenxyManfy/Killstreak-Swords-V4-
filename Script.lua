@@ -9,6 +9,8 @@ local CONFIG = {
     walkSpeed = 16,
     arrivalThreshold = 3,
     maxWalkTime = 2,
+    maxDistance = 50, -- Максимальное допустимое расстояние до цели
+    maxHeightDifference = 20, -- Максимальная разница по высоте
     buttonColors = {
         start = Color3.fromRGB(60, 180, 60),
         pause = Color3.fromRGB(200, 150, 0),
@@ -30,8 +32,8 @@ local CONFIG = {
         "TON-618"
     },
     windowWidth = 380,
-    windowHeightNormal = 340, -- Увеличена высота
-    windowHeightMobile = 370, -- Увеличена высота
+    windowHeightNormal = 340,
+    windowHeightMobile = 370,
     buttonWidth = 0.9,
     titleHeight = 25,
     ignoreItem = "Luminance"
@@ -43,7 +45,7 @@ local STATE = {
     paused = false,
     stopped = true,
     attemptCount = 0,
-    totalAttempts = 0, -- Добавлен общий счетчик попыток
+    totalAttempts = 0,
     isDead = false,
     rareItemFound = false,
     ignoredRareItems = {},
@@ -52,7 +54,8 @@ local STATE = {
     walkAttempts = 0,
     minimized = false,
     closed = false,
-    unexpectedRareItem = nil
+    unexpectedRareItem = nil,
+    tooFarFromTarget = false
 }
 
 --= Создание интерфейса =--
@@ -207,7 +210,7 @@ statusDisplay.TextSize = 18
 statusDisplay.TextWrapped = true
 statusDisplay.Parent = contentFrame
 
-local attemptsDisplay = Instance.new("TextLabel") -- Добавлен дисплей общего счетчика
+local attemptsDisplay = Instance.new("TextLabel")
 attemptsDisplay.Size = UDim2.new(CONFIG.buttonWidth, 0, 0, 20)
 attemptsDisplay.Position = UDim2.new((1 - CONFIG.buttonWidth)/2, 0, STATE.isMobile and 0.75 or 0.65, 0)
 attemptsDisplay.Text = "Всего попыток: 0"
@@ -274,36 +277,7 @@ minimizeBtn.MouseButton1Click:Connect(toggleMinimize)
 closeBtn.MouseButton1Click:Connect(closeGUI)
 
 --= Основные функции =--
-local function updateUI()
-    startBtn.BackgroundColor3 = STATE.running and CONFIG.buttonColors.inactive or CONFIG.buttonColors.start
-    pauseBtn.BackgroundColor3 = STATE.running and (STATE.paused and CONFIG.buttonColors.pause or CONFIG.buttonColors.inactive) or CONFIG.buttonColors.inactive
-    stopBtn.BackgroundColor3 = STATE.running and CONFIG.buttonColors.stop or CONFIG.buttonColors.inactive
-    
-    pauseBtn.Text = STATE.paused and "ПРОДОЛЖИТЬ" or "ПАУЗА"
-    attemptsDisplay.Text = "Всего попыток: "..tostring(STATE.totalAttempts) -- Обновляем общий счетчик
-    
-    if STATE.unexpectedRareItem then
-        statusDisplay.Text = string.format("НАЙДЕН НЕИЗВЕСТНЫЙ ЦЕННЫЙ ПРЕДМЕТ: %s!\nСКРИПТ ОСТАНОВЛЕН", STATE.unexpectedRareItem)
-    elseif STATE.rareItemFound then
-        statusDisplay.Text = "НАЙДЕН РЕДКИЙ ПРЕДМЕТ! СКРИПТ ОСТАНОВЛЕН"
-    elseif STATE.stopped then
-        statusDisplay.Text = string.format("ОСТАНОВЛЕНО | Попыток: %d", STATE.attemptCount)
-    elseif STATE.paused then
-        statusDisplay.Text = string.format("ПАУЗА | Попытка %d", STATE.attemptCount)
-    elseif STATE.isDead then
-        statusDisplay.Text = "ПЕРСОНАЖ УМЕР | Ожидание возрождения..."
-    elseif STATE.isWalking then
-        statusDisplay.Text = string.format("ИДЕТ К ЦЕЛИ | Попытка %d", STATE.attemptCount)
-    else
-        statusDisplay.Text = string.format("РАБОТАЕТ | Попытка %d", STATE.attemptCount)
-    end
-    
-    if STATE.isMobile and resetBtn then
-        resetBtn.Visible = STATE.running and not STATE.paused and not STATE.stopped
-    end
-end
-
-local function checkForRareItems()
+local function hasRareItems()
     -- Проверяем неизвестные ценные предметы
     for _, item in ipairs(player.Backpack:GetChildren()) do
         if item:IsA("Tool") and item.Name ~= CONFIG.ignoreItem then
@@ -341,6 +315,45 @@ local function checkForRareItems()
         end
     end
     return false
+end
+
+local function updateUI()
+    startBtn.BackgroundColor3 = STATE.running and CONFIG.buttonColors.inactive or CONFIG.buttonColors.start
+    pauseBtn.BackgroundColor3 = STATE.running and (STATE.paused and CONFIG.buttonColors.pause or CONFIG.buttonColors.inactive) or CONFIG.buttonColors.inactive
+    stopBtn.BackgroundColor3 = STATE.running and CONFIG.buttonColors.stop or CONFIG.buttonColors.inactive
+    
+    pauseBtn.Text = STATE.paused and "ПРОДОЛЖИТЬ" or "ПАУЗА"
+    attemptsDisplay.Text = "Всего попыток: "..tostring(STATE.totalAttempts)
+    
+    if STATE.unexpectedRareItem then
+        statusDisplay.Text = string.format("НАЙДЕН НЕИЗВЕСТНЫЙ ЦЕННЫЙ ПРЕДМЕТ: %s!\nСКРИПТ ОСТАНОВЛЕН", STATE.unexpectedRareItem)
+    elseif STATE.rareItemFound then
+        statusDisplay.Text = "НАЙДЕН РЕДКИЙ ПРЕДМЕТ! СКРИПТ ОСТАНОВЛЕН"
+    elseif STATE.stopped then
+        statusDisplay.Text = string.format("ОСТАНОВЛЕНО | Попыток: %d", STATE.attemptCount)
+    elseif STATE.paused then
+        statusDisplay.Text = string.format("ПАУЗА | Попытка %d", STATE.attemptCount)
+    elseif STATE.isDead then
+        statusDisplay.Text = "ПЕРСОНАЖ УМЕР | Ожидание возрождения..."
+    elseif STATE.isWalking then
+        statusDisplay.Text = string.format("ИДЕТ К ЦЕЛИ | Попытка %d", STATE.attemptCount)
+    else
+        statusDisplay.Text = string.format("РАБОТАЕТ | Попытка %d", STATE.attemptCount)
+    end
+    
+    if STATE.isMobile and resetBtn then
+        resetBtn.Visible = STATE.running and not STATE.paused and not STATE.stopped
+    end
+end
+
+local function isTooFarFromTarget(position)
+    -- Проверяем расстояние по горизонтали
+    local horizontalDistance = (Vector3.new(position.X, 0, position.Z) - Vector3.new(CONFIG.targetPosition.X, 0, CONFIG.targetPosition.Z)).Magnitude
+    
+    -- Проверяем разницу по высоте
+    local heightDifference = math.abs(position.Y - CONFIG.targetPosition.Y)
+    
+    return horizontalDistance > CONFIG.maxDistance or heightDifference > CONFIG.maxHeightDifference
 end
 
 local function holdEKey()
@@ -392,6 +405,14 @@ local function walkToTarget()
               and not STATE.paused 
               and not STATE.closed do
             
+            -- Проверяем расстояние только во время движения
+            if isTooFarFromTarget(rootPart.Position) then
+                humanoid.Health = 0
+                statusDisplay.Text = "СЛИШКОМ ДАЛЕКО | Персонаж умирает..."
+                STATE.isWalking = false
+                return false
+            end
+            
             if STATE.isDead or STATE.rareItemFound or STATE.unexpectedRareItem or STATE.closed then
                 STATE.isWalking = false
                 return false
@@ -412,7 +433,7 @@ local function walkToTarget()
 end
 
 local function executeResetSequence()
-    if checkForRareItems() then
+    if hasRareItems() then
         STATE.rareItemFound = true
         STATE.running = false
         STATE.stopped = true
@@ -472,7 +493,7 @@ local function onCharacterAdded(character)
     character:WaitForChild("Humanoid").Died:Connect(function()
         STATE.isDead = true
         STATE.attemptCount += 1
-        STATE.totalAttempts += 1 -- Увеличиваем общий счетчик
+        STATE.totalAttempts += 1
         updateUI()
     end)
 end
@@ -495,12 +516,21 @@ end
 
 --= Главный цикл =--
 local function executeScript()
+    -- Проверяем наличие редких предметов перед запуском
+    if hasRareItems() then
+        STATE.running = false
+        STATE.stopped = true
+        updateUI()
+        return
+    end
+    
     STATE.attemptCount = 0
     STATE.rareItemFound = false
     STATE.unexpectedRareItem = nil
     
     while not STATE.stopped and not STATE.rareItemFound and not STATE.unexpectedRareItem and not STATE.closed do
-        if checkForRareItems() then
+        -- Проверяем наличие редких предметов в начале каждой итерации
+        if hasRareItems() then
             STATE.rareItemFound = true
             break
         end
@@ -522,7 +552,7 @@ local function executeScript()
             statusDisplay.Text = string.format("Попытка %d | Проверка предметов...", STATE.attemptCount)
             task.wait(0.5)
             
-            if checkForRareItems() then
+            if hasRareItems() then
                 STATE.rareItemFound = true
                 break
             end
@@ -551,13 +581,21 @@ local function executeScript()
     updateUI()
 end
 
---= Обработчики событий =--
+--= Обработчики кнопок =--
 startBtn.MouseButton1Click:Connect(function()
-    if not STATE.running and not STATE.closed then
+    if not STATE.running and STATE.stopped then
+        -- Проверяем наличие редких предметов перед запуском
+        if hasRareItems() then
+            STATE.running = false
+            STATE.stopped = true
+            updateUI()
+            return
+        end
+        
         STATE.running = true
-        STATE.paused = false
         STATE.stopped = false
-        STATE.isDead = false
+        STATE.paused = false
+        STATE.attemptCount = 0
         STATE.rareItemFound = false
         STATE.unexpectedRareItem = nil
         updateUI()
@@ -566,30 +604,28 @@ startBtn.MouseButton1Click:Connect(function()
 end)
 
 pauseBtn.MouseButton1Click:Connect(function()
-    if STATE.running and not STATE.rareItemFound and not STATE.unexpectedRareItem and not STATE.closed then
+    if STATE.running and not STATE.stopped then
         STATE.paused = not STATE.paused
         updateUI()
     end
 end)
 
 stopBtn.MouseButton1Click:Connect(function()
-    if (STATE.running or STATE.paused) and not STATE.rareItemFound and not STATE.unexpectedRareItem and not STATE.closed then
-        STATE.stopped = true
+    if STATE.running and not STATE.stopped then
         STATE.running = false
+        STATE.stopped = true
         STATE.paused = false
-        STATE.isDead = false
-        STATE.isWalking = false
         updateUI()
     end
 end)
 
 if STATE.isMobile and resetBtn then
     resetBtn.MouseButton1Click:Connect(function()
-        if STATE.running and not STATE.paused and not STATE.stopped and not STATE.closed then
+        if STATE.running and not STATE.stopped and not STATE.paused then
             executeResetSequence()
         end
     end)
 end
 
--- Первоначальная настройка UI
+-- Инициализация интерфейса
 updateUI()
