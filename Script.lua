@@ -32,9 +32,10 @@ local CONFIG = {
         "Existential Conqueror",
         "TON-618"
     },
+        --= Размеры gui =--
     windowWidth = 380,
-    windowHeightNormal = 340,
-    windowHeightMobile = 370,
+    windowHeightNormal = 390,
+    windowHeightMobile = 390,
     buttonWidth = 0.9,
     titleHeight = 25,
     ignoreItem = "Luminance"
