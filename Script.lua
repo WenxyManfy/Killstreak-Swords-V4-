@@ -31,6 +31,7 @@ local CONFIG = {
         "Luminous Stellar",
         "Existential Conqueror",
         "TON-618"
+        "SubZero"
     },
     windowWidth = 380,
     windowHeightNormal = 340,
