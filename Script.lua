@@ -1,6 +1,7 @@
 --= Конфигурация =--
 local CONFIG = {
     targetPosition = Vector3.new(9602.7, 4086.2, -5357.8),
+    safePosition = Vector3.new(8687.2, 4746.2, -6264),
     holdEKeyTime = 1,
     teleportDelay = 0.1,
     toolName = "Luminance",
@@ -9,8 +10,8 @@ local CONFIG = {
     walkSpeed = 16,
     arrivalThreshold = 3,
     maxWalkTime = 2,
-    maxDistance = 50, -- Максимальное допустимое расстояние до цели
-    maxHeightDifference = 20, -- Максимальная разница по высоте
+    maxDistance = 50,
+    maxHeightDifference = 20,
     buttonColors = {
         start = Color3.fromRGB(60, 180, 60),
         pause = Color3.fromRGB(200, 150, 0),
@@ -55,11 +56,21 @@ local STATE = {
     minimized = false,
     closed = false,
     unexpectedRareItem = nil,
-    tooFarFromTarget = false
+    tooFarFromTarget = false,
+    foundItemType = nil
 }
 
 --= Создание интерфейса =--
 local player = game:GetService("Players").LocalPlayer
+
+-- Проверка на античит
+if not game:GetService("RunService"):IsStudio() then
+    local antiCheat = player:FindFirstChild("AntiCheat")
+    if antiCheat then
+        warn("Обнаружен античит! Скрипт может не работать корректно.")
+        return
+    end
+end
 
 -- Удаляем старые версии GUI
 if player:FindFirstChild("PlayerGui") then
@@ -101,7 +112,7 @@ titleBar.Parent = mainFrame
 local titleText = Instance.new("TextLabel")
 titleText.Size = UDim2.new(0.7, 0, 1, 0)
 titleText.Position = UDim2.new(0, 5, 0, 0)
-titleText.Text = "Auto Farm GUI (Чит)"
+titleText.Text = "Luminance GUI (Cheat)"
 titleText.TextColor3 = Color3.fromRGB(255, 255, 255)
 titleText.BackgroundTransparency = 1
 titleText.Font = Enum.Font.SourceSansSemibold
@@ -154,7 +165,7 @@ rareItemsFrame.Parent = contentFrame
 
 local rareItemsTitle = Instance.new("TextLabel")
 rareItemsTitle.Size = UDim2.new(1, 0, 0, 20)
-rareItemsTitle.Text = "Игнорируемые редкие предметы:"
+rareItemsTitle.Text = "Игнорируемые редкие вариации Luminance:"
 rareItemsTitle.TextColor3 = Color3.fromRGB(255, 255, 255)
 rareItemsTitle.BackgroundTransparency = 1
 rareItemsTitle.Font = Enum.Font.SourceSansSemibold
@@ -169,14 +180,14 @@ rareItemsScrollingFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
 rareItemsScrollingFrame.ScrollBarThickness = 5
 rareItemsScrollingFrame.Parent = rareItemsFrame
 
--- Кнопка сброса для мобильных устройств
+-- Кнопка смерти для мобильных устройств
 local resetBtn
 if STATE.isMobile then
     resetBtn = Instance.new("TextButton")
     resetBtn.Name = "MobileReset"
     resetBtn.Size = UDim2.new(CONFIG.buttonWidth, 0, 0, 30)
     resetBtn.Position = UDim2.new((1 - CONFIG.buttonWidth)/2, 0, 0.65, 0)
-    resetBtn.Text = "СБРОС (для моб.)"
+    resetBtn.Text = "Смерть (для моб.)"
     resetBtn.Font = Enum.Font.SourceSansBold
     resetBtn.TextSize = 14
     resetBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
@@ -277,11 +288,56 @@ minimizeBtn.MouseButton1Click:Connect(toggleMinimize)
 closeBtn.MouseButton1Click:Connect(closeGUI)
 
 --= Основные функции =--
-local function hasRareItems()
-    -- Проверяем неизвестные ценные предметы
+local function teleportToSafePosition()
+    local character = player.Character
+    if not character then 
+        statusDisplay.Text = "Ошибка телепортации: нет персонажа"
+        return false 
+    end
+    
+    local humanoidRootPart = character:FindFirstChild("HumanoidRootPart")
+    if not humanoidRootPart then 
+        statusDisplay.Text = "Ошибка телепортации: нет HumanoidRootPart"
+        return false 
+    end
+    
+    -- Проверяем, не находимся ли уже в безопасной точке
+    if (humanoidRootPart.Position - CONFIG.safePosition).Magnitude < 10 then
+        statusDisplay.Text = "Уже в безопасной точке"
+        return true
+    end
+    
+    -- Убедимся, что персонаж жив
+    local humanoid = character:FindFirstChildOfClass("Humanoid")
+    if humanoid and humanoid.Health <= 0 then
+        statusDisplay.Text = "Нельзя телепортировать мертвого персонажа"
+        return false
+    end
+    
+    -- Выполняем телепортацию
+    local success = pcall(function()
+        humanoidRootPart.CFrame = CFrame.new(CONFIG.safePosition)
+    end)
+    
+    if success then
+        statusDisplay.Text = "Успешная телепортация!"
+        task.wait(1) -- Даем время на завершение телепортации
+        return true
+    else
+        statusDisplay.Text = "Ошибка при телепортации!"
+        return false
+    end
+end
+
+local function hasAnyValuableItems()
+    STATE.foundItemType = nil
+    STATE.unexpectedRareItem = nil
+    
+    -- Проверяем наличие любых ценных предметов (из списка или неизвестных)
     for _, item in ipairs(player.Backpack:GetChildren()) do
         if item:IsA("Tool") and item.Name ~= CONFIG.ignoreItem then
             local isKnown = false
+            -- Проверяем, есть ли предмет в списке редких
             for _, knownItem in ipairs(CONFIG.rareItems) do
                 if item.Name == knownItem then
                     isKnown = true
@@ -289,32 +345,50 @@ local function hasRareItems()
                 end
             end
             
+            -- Если предмет не известен и не игнорируется
             if not isKnown and not STATE.ignoredRareItems[item.Name] then
                 STATE.unexpectedRareItem = item.Name
-                return true
+                STATE.foundItemType = "unknown"
+                return true, "unknown"
+            end
+            
+            -- Если предмет известен и не игнорируется
+            if isKnown and not STATE.ignoredRareItems[item.Name] then
+                STATE.rareItemFound = true
+                STATE.foundItemType = "rare"
+                return true, "rare"
             end
         end
     end
     
-    -- Проверяем известные редкие предметы
-    for _, itemName in ipairs(CONFIG.rareItems) do
-        if not STATE.ignoredRareItems[itemName] then
-            for _, item in ipairs(player.Backpack:GetChildren()) do
-                if item.Name == itemName then
-                    return true
-                end
-            end
-            
-            if player.Character then
-                for _, item in ipairs(player.Character:GetChildren()) do
-                    if item:IsA("Tool") and item.Name == itemName then
-                        return true
+    -- Проверяем инструменты в руках персонажа
+    if player.Character then
+        for _, item in ipairs(player.Character:GetChildren()) do
+            if item:IsA("Tool") and item.Name ~= CONFIG.ignoreItem then
+                local isKnown = false
+                for _, knownItem in ipairs(CONFIG.rareItems) do
+                    if item.Name == knownItem then
+                        isKnown = true
+                        break
                     end
+                end
+                
+                if not isKnown and not STATE.ignoredRareItems[item.Name] then
+                    STATE.unexpectedRareItem = item.Name
+                    STATE.foundItemType = "unknown"
+                    return true, "unknown"
+                end
+                
+                if isKnown and not STATE.ignoredRareItems[item.Name] then
+                    STATE.rareItemFound = true
+                    STATE.foundItemType = "rare"
+                    return true, "rare"
                 end
             end
         end
     end
-    return false
+    
+    return false, nil
 end
 
 local function updateUI()
@@ -322,13 +396,13 @@ local function updateUI()
     pauseBtn.BackgroundColor3 = STATE.running and (STATE.paused and CONFIG.buttonColors.pause or CONFIG.buttonColors.inactive) or CONFIG.buttonColors.inactive
     stopBtn.BackgroundColor3 = STATE.running and CONFIG.buttonColors.stop or CONFIG.buttonColors.inactive
     
-    pauseBtn.Text = STATE.paused and "ПРОДОЛЖИТЬ" or "ПАУЗА"
+    pauseBtn.Text = STATE.paused and "Продолжить" or "Пауза"
     attemptsDisplay.Text = "Всего попыток: "..tostring(STATE.totalAttempts)
     
     if STATE.unexpectedRareItem then
-        statusDisplay.Text = string.format("НАЙДЕН НЕИЗВЕСТНЫЙ ЦЕННЫЙ ПРЕДМЕТ: %s!\nСКРИПТ ОСТАНОВЛЕН", STATE.unexpectedRareItem)
+        statusDisplay.Text = string.format("НАЙДЕН НЕИЗВЕСТНЫЙ ПРЕДМЕТ: %s!\nТЕЛЕПОРТАЦИЯ И ОСТАНОВ", STATE.unexpectedRareItem)
     elseif STATE.rareItemFound then
-        statusDisplay.Text = "НАЙДЕН РЕДКИЙ ПРЕДМЕТ! СКРИПТ ОСТАНОВЛЕН"
+        statusDisplay.Text = "НАЙДЕН РЕДКИЙ ПРЕДМЕТ! ТЕЛЕПОРТАЦИЯ И ОСТАНОВКА СКРИПТА"
     elseif STATE.stopped then
         statusDisplay.Text = string.format("ОСТАНОВЛЕНО | Попыток: %d", STATE.attemptCount)
     elseif STATE.paused then
@@ -347,12 +421,8 @@ local function updateUI()
 end
 
 local function isTooFarFromTarget(position)
-    -- Проверяем расстояние по горизонтали
     local horizontalDistance = (Vector3.new(position.X, 0, position.Z) - Vector3.new(CONFIG.targetPosition.X, 0, CONFIG.targetPosition.Z)).Magnitude
-    
-    -- Проверяем разницу по высоте
     local heightDifference = math.abs(position.Y - CONFIG.targetPosition.Y)
-    
     return horizontalDistance > CONFIG.maxDistance or heightDifference > CONFIG.maxHeightDifference
 end
 
@@ -405,7 +475,6 @@ local function walkToTarget()
               and not STATE.paused 
               and not STATE.closed do
             
-            -- Проверяем расстояние только во время движения
             if isTooFarFromTarget(rootPart.Position) then
                 humanoid.Health = 0
                 statusDisplay.Text = "СЛИШКОМ ДАЛЕКО | Персонаж умирает..."
@@ -432,34 +501,33 @@ local function walkToTarget()
     return success and not STATE.stopped and not STATE.rareItemFound and not STATE.unexpectedRareItem and not STATE.closed
 end
 
+local function killCharacter()
+    if player.Character then
+        local humanoid = player.Character:FindFirstChildOfClass("Humanoid")
+        if humanoid then
+            humanoid.Health = 0
+            return true
+        end
+    end
+    return false
+end
+
 local function executeResetSequence()
-    if hasRareItems() then
-        STATE.rareItemFound = true
+    local hasItems, itemType = hasAnyValuableItems()
+    if hasItems then
+        if itemType == "unknown" then
+            STATE.unexpectedRareItem = STATE.unexpectedRareItem or "Неизвестный предмет"
+        elseif itemType == "rare" then
+            STATE.rareItemFound = true
+        end
         STATE.running = false
         STATE.stopped = true
         updateUI()
         return
     end
     
-    if STATE.isMobile then
-        local humanoid = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
-        if humanoid then
-            humanoid.Health = 0
-        end
-    else
-        local virtualInput = game:GetService("VirtualInputManager")
-        virtualInput:SendKeyEvent(true, "Escape", false, nil)
-        task.wait(0.05)
-        virtualInput:SendKeyEvent(false, "Escape", false, nil)
-        task.wait(CONFIG.resetDelay)
-        virtualInput:SendKeyEvent(true, "R", false, nil)
-        task.wait(0.05)
-        virtualInput:SendKeyEvent(false, "R", false, nil)
-        task.wait(CONFIG.resetDelay)
-        virtualInput:SendKeyEvent(true, "Return", false, nil)
-        task.wait(0.05)
-        virtualInput:SendKeyEvent(false, "Return", false, nil)
-    end
+    killCharacter()
+    task.wait(CONFIG.resetDelay)
 end
 
 local function useTool()
@@ -516,8 +584,20 @@ end
 
 --= Главный цикл =--
 local function executeScript()
-    -- Проверяем наличие редких предметов перед запуском
-    if hasRareItems() then
+    -- Проверяем наличие любых ценных предметов перед запуском
+    local hasItems, itemType = hasAnyValuableItems()
+    if hasItems then
+        if itemType == "unknown" then
+            STATE.unexpectedRareItem = STATE.unexpectedRareItem or "Неизвестный предмет"
+            if teleportToSafePosition() then
+                task.wait(1)
+            end
+        elseif itemType == "rare" then
+            STATE.rareItemFound = true
+            if teleportToSafePosition() then
+                task.wait(1)
+            end
+        end
         STATE.running = false
         STATE.stopped = true
         updateUI()
@@ -529,9 +609,20 @@ local function executeScript()
     STATE.unexpectedRareItem = nil
     
     while not STATE.stopped and not STATE.rareItemFound and not STATE.unexpectedRareItem and not STATE.closed do
-        -- Проверяем наличие редких предметов в начале каждой итерации
-        if hasRareItems() then
-            STATE.rareItemFound = true
+        -- Проверяем наличие предметов в начале каждой итерации
+        local hasItems, itemType = hasAnyValuableItems()
+        if hasItems then
+            if itemType == "unknown" then
+                STATE.unexpectedRareItem = STATE.unexpectedRareItem or "Неизвестный предмет"
+                if teleportToSafePosition() then
+                    task.wait(1)
+                end
+            elseif itemType == "rare" then
+                STATE.rareItemFound = true
+                if teleportToSafePosition() then
+                    task.wait(1)
+                end
+            end
             break
         end
         
@@ -552,8 +643,19 @@ local function executeScript()
             statusDisplay.Text = string.format("Попытка %d | Проверка предметов...", STATE.attemptCount)
             task.wait(0.5)
             
-            if hasRareItems() then
-                STATE.rareItemFound = true
+            local hasItems, itemType = hasAnyValuableItems()
+            if hasItems then
+                if itemType == "unknown" then
+                    STATE.unexpectedRareItem = STATE.unexpectedRareItem or "Неизвестный предмет"
+                    if teleportToSafePosition() then
+                        task.wait(1)
+                    end
+                elseif itemType == "rare" then
+                    STATE.rareItemFound = true
+                    if teleportToSafePosition() then
+                        task.wait(1)
+                    end
+                end
                 break
             end
             
@@ -584,8 +686,19 @@ end
 --= Обработчики кнопок =--
 startBtn.MouseButton1Click:Connect(function()
     if not STATE.running and STATE.stopped then
-        -- Проверяем наличие редких предметов перед запуском
-        if hasRareItems() then
+        local hasItems, itemType = hasAnyValuableItems()
+        if hasItems then
+            if itemType == "unknown" then
+                STATE.unexpectedRareItem = STATE.unexpectedRareItem or "Неизвестный предмет"
+                if teleportToSafePosition() then
+                    task.wait(1)
+                end
+            elseif itemType == "rare" then
+                STATE.rareItemFound = true
+                if teleportToSafePosition() then
+                    task.wait(1)
+                end
+            end
             STATE.running = false
             STATE.stopped = true
             updateUI()
