@@ -32,7 +32,7 @@ local CONFIG = {
         "Existential Conqueror",
         "TON-618"
     },
-        --= Размеры gui =--
+--= Размеры gui =--
     windowWidth = 380,
     windowHeightNormal = 390,
     windowHeightMobile = 390,
