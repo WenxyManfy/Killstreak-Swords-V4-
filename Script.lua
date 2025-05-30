@@ -14,8 +14,8 @@ local CONFIG = {
     maxHeightDifference = 20,
     buttonColors = {
         start = Color3.fromRGB(60, 180, 60),
-        pause = Color3.fromRGB(200, 150, 0),
-        stop = Color3.fromRGB(180, 60, 60),
+        pause = Color3.fromRGB(255, 255, 0),
+        stop = Color3.fromRGB(255, 0, 0),
         inactive = Color3.fromRGB(100, 100, 100)
     },
     rareItems = {
