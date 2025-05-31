@@ -33,8 +33,8 @@ local CONFIG = {
         "TON-618"
     },
     windowWidth = 380,
-    windowHeightNormal = 400,
-    windowHeightMobile = 400,
+    windowHeightNormal = 500,
+    windowHeightMobile = 500,
     buttonWidth = 0.9,
     titleHeight = 25,
     ignoreItem = "Luminance"
