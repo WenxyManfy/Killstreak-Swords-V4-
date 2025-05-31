@@ -7,7 +7,7 @@ local CONFIG = {
     toolName = "Luminance",
     resetDelay = 0.5,
     respawnCheckInterval = 1,
-    walkSpeed = 16,
+    walkSpeed = 60, -- Скорость передвижения персонажа
     arrivalThreshold = 3,
     maxWalkTime = 2,
     maxDistance = 50,
@@ -32,10 +32,9 @@ local CONFIG = {
         "Existential Conqueror",
         "TON-618"
     },
---= Размеры gui =--
     windowWidth = 380,
-    windowHeightNormal = 390,
-    windowHeightMobile = 390,
+    windowHeightNormal = 400,
+    windowHeightMobile = 400,
     buttonWidth = 0.9,
     titleHeight = 25,
     ignoreItem = "Luminance"
@@ -113,7 +112,7 @@ titleBar.Parent = mainFrame
 local titleText = Instance.new("TextLabel")
 titleText.Size = UDim2.new(0.7, 0, 1, 0)
 titleText.Position = UDim2.new(0, 5, 0, 0)
-titleText.Text = "Luminance GUI (Cheat)"
+titleText.Text = "Luminance GUI (By Naxy)"
 titleText.TextColor3 = Color3.fromRGB(255, 255, 255)
 titleText.BackgroundTransparency = 1
 titleText.Font = Enum.Font.SourceSansSemibold
@@ -457,6 +456,9 @@ local function walkToTarget()
     local rootPart = character:FindFirstChild("HumanoidRootPart")
     if not rootPart then return false end
     
+    -- Устанавливаем скорость передвижения
+    humanoid.WalkSpeed = CONFIG.walkSpeed
+    
     STATE.isWalking = true
     STATE.walkAttempts = 0
     updateUI()
@@ -468,6 +470,8 @@ local function walkToTarget()
         STATE.walkAttempts += 1
         startTime = os.time()
         
+        -- Задержка перед началом движения
+        task.wait(0.4)
         humanoid:MoveTo(CONFIG.targetPosition)
         
         while (rootPart.Position - CONFIG.targetPosition).Magnitude > CONFIG.arrivalThreshold 
@@ -713,6 +717,8 @@ startBtn.MouseButton1Click:Connect(function()
         STATE.rareItemFound = false
         STATE.unexpectedRareItem = nil
         updateUI()
+        
+        -- Запускаем в отдельной корутине
         coroutine.wrap(executeScript)()
     end
 end)
